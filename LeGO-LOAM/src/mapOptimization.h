@@ -15,6 +15,8 @@
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/nonlinear/ISAM2.h>
 
+#define uwbQueLength 200
+
 inline gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint) {
   // camera frame to lidar frame
   return gtsam::Pose3(
@@ -75,9 +77,19 @@ class MapOptimization : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubIcpKeyFrames;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubRecentKeyFrames;
 
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr subUWBpose;
+
   nav_msgs::msg::Odometry odomAftMapped;
   geometry_msgs::msg::TransformStamped aftMappedTrans;
   std::shared_ptr<tf2_ros::TransformBroadcaster> tfBroadcaster;
+
+  std::string uwbpose_topic_name_ = "uwb_data";
+
+  double uwbTime;
+  double uwbX;
+  double uwbY;
+  double uwbZ;
+  bool new_uwb_data;
 
   std::vector<pcl::PointCloud<PointType>::Ptr> cornerCloudKeyFrames;
   std::vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames;
@@ -217,6 +229,8 @@ class MapOptimization : public rclcpp::Node {
   void updatePointAssociateToMapSinCos();
   void pointAssociateToMap(PointType const *const pi, PointType *const po);
   void updateTransformPointCloudSinCos(PointTypePose *tIn) ;
+
+  void uwbpose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
 
   pcl::PointCloud<PointType>::Ptr transformPointCloud(
       pcl::PointCloud<PointType>::Ptr cloudIn);

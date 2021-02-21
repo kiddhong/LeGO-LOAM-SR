@@ -61,6 +61,13 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   pubIcpKeyFrames = this->create_publisher<sensor_msgs::msg::PointCloud2>("/corrected_cloud", 2);
   pubRecentKeyFrames = this->create_publisher<sensor_msgs::msg::PointCloud2>("/recent_cloud", 2);
 
+  // UWB subscriber
+  this->declare_parameter("sub_topicname_uwb", rclcpp::ParameterValue("uwb_data"));
+  this->get_parameter("sub_topicname_uwb", uwbpose_topic_name_);
+
+  subUWBpose = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+      uwbpose_topic_name_, 50, std::bind(&MapOptimization::uwbpose_callback, this, std::placeholders::_1));
+
   tfBroadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
   downSizeFilterCorner.setLeafSize(0.2, 0.2, 0.2);
@@ -73,9 +80,9 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   downSizeFilterSurroundingKeyPoses.setLeafSize(1.0, 1.0, 1.0);
 
   // for global map visualization
-  downSizeFilterGlobalMapKeyPoses.setLeafSize(1.0, 1.0, 1.0);
+  downSizeFilterGlobalMapKeyPoses.setLeafSize(0.05, 0.05, 0.05);
   // for global map visualization
-  downSizeFilterGlobalMapKeyFrames.setLeafSize(0.4, 0.4, 0.4);
+  downSizeFilterGlobalMapKeyFrames.setLeafSize(0.01, 0.01, 0.01);
 
   odomAftMapped.header.frame_id = "camera_init";
   odomAftMapped.child_frame_id = "aft_mapped";
@@ -223,6 +230,8 @@ void MapOptimization::allocateMemory() {
   aLoopIsClosed = false;
 
   latestFrameID = 0;
+
+  new_uwb_data = false;
 }
 
 
@@ -375,7 +384,37 @@ void MapOptimization::transformAssociateToMap() {
       (-sin(transformTobeMapped[1]) * x2 + cos(transformTobeMapped[1]) * z2);
 }
 
+void MapOptimization::uwbpose_callback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg) {
+  // std::cout << "uwb_pose: "<< msg->pose.pose.position.x << ", " << msg->pose.pose.position.y << std::endl;
+
+  uwbTime = msg->header.stamp.sec;
+  uwbX = msg->pose.pose.position.x;
+  uwbY = msg->pose.pose.position.y;
+  uwbZ = msg->pose.pose.position.z;
+  new_uwb_data = true;
+}
+
 void MapOptimization::transformUpdate() {
+
+  if (new_uwb_data){
+    if (timeLaserOdometry.seconds() + 0.1 < uwbTime){
+      std::cout << "uwbTime is faster than LoamTime: LOAM_TIME: " << timeLaserOdometry.seconds() << ", UWB_TIME: " << uwbTime<< std::endl;
+    }
+    else{
+      // std::cout << "uwbTime is good. LOAM_TIME: " << timeLaserOdometry.seconds() << ", UWB_TIME: " << uwbTime<< std::endl;
+      transformTobeMapped[5] = 0.999 * transformTobeMapped[5] + 0.001 * uwbX;
+		  transformTobeMapped[3] = 0.999 * transformTobeMapped[3] + 0.001 * uwbY;
+      // transformTobeMapped[4] = 0.999 * transformTobeMapped[4] + 0.001 * uwbZ;
+    }
+  }
+  
+  //TODO: Fusion with IMU
+  double imuRollLast = 0;
+  double imuPitchLast = 0;
+  {
+      transformTobeMapped[0] = 0.999 * transformTobeMapped[0] + 0.001 * imuPitchLast;
+		  transformTobeMapped[2] = 0.999 * transformTobeMapped[2] + 0.001 * imuRollLast;
+  }
 
   for (int i = 0; i < 6; i++) {
     transformBefMapped[i] = transformSum[i];
