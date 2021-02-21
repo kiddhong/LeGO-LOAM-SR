@@ -19,7 +19,7 @@ def generate_launch_description():
   stdout_colorized_envvar = SetEnvironmentVariable('RCUTILS_COLORIZED_OUTPUT', '1')
 
   # Simulated time
-  use_sim_time = LaunchConfiguration('use_sim_time', default='false')
+  use_sim_time = LaunchConfiguration('use_sim_time', default='true')
 
   # Nodes Configurations
   config_file = os.path.join("/home/jetson-nx/ros2_ws/src/LeGO-LOAM-SR/LeGO-LOAM/config", 'loam_config.yaml')
@@ -141,11 +141,11 @@ def generate_launch_description():
   ld.add_action(stdout_colorized_envvar)
   # Add nodes
   ld.add_action(lego_loam_node)
-  ld.add_action(transform_map)
-  ld.add_action(transform_camera)
-  ld.add_action(transform_vel)
+  #ld.add_action(transform_map)
+  #ld.add_action(transform_camera)
+  #ld.add_action(transform_vel)
 
-  ld.add_action(container)
+  #ld.add_action(container)
   #ld.add_action(gl_back)
   #ld.add_action(tf_back)
 
