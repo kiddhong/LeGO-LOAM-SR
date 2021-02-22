@@ -115,7 +115,7 @@ void FeatureAssociation::initializationValue() {
   const size_t cloud_size = _vertical_scans * _horizontal_scans;
   cloudSmoothness.resize(cloud_size);
 
-  downSizeFilter.setLeafSize(0.2, 0.2, 0.2);
+  downSizeFilter.setLeafSize(0.1, 0.1, 0.1);
 
   segmentedCloud.reset(new pcl::PointCloud<PointType>());
   outlierCloud.reset(new pcl::PointCloud<PointType>());

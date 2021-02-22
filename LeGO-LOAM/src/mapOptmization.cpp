@@ -60,10 +60,14 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   pubHistoryKeyFrames = this->create_publisher<sensor_msgs::msg::PointCloud2>("/history_cloud", 2);
   pubIcpKeyFrames = this->create_publisher<sensor_msgs::msg::PointCloud2>("/corrected_cloud", 2);
   pubRecentKeyFrames = this->create_publisher<sensor_msgs::msg::PointCloud2>("/recent_cloud", 2);
-
+ 
   // UWB subscriber
   this->declare_parameter("sub_topicname_uwb", rclcpp::ParameterValue("uwb_data"));
   this->get_parameter("sub_topicname_uwb", uwbpose_topic_name_);
+
+  _sub_laser_cloud = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+      "/lidar_points", 1, std::bind(&MapOptimization::cloudHandler, this, std::placeholders::_1));
+
 
   subUWBpose = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
       uwbpose_topic_name_, 50, std::bind(&MapOptimization::uwbpose_callback, this, std::placeholders::_1));
@@ -71,11 +75,11 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   tfBroadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
   downSizeFilterCorner.setLeafSize(0.2, 0.2, 0.2);
-  downSizeFilterSurf.setLeafSize(0.4, 0.4, 0.4);
+  downSizeFilterSurf.setLeafSize(0.3, 0.3, 0.3);
   downSizeFilterOutlier.setLeafSize(0.4, 0.4, 0.4);
 
   // for histor key frames of loop closure
-  downSizeFilterHistoryKeyFrames.setLeafSize(0.4, 0.4, 0.4);
+  downSizeFilterHistoryKeyFrames.setLeafSize(0.3, 0.3, 0.3);
   // for surrounding key poses of scan-to-map optimization
   downSizeFilterSurroundingKeyPoses.setLeafSize(1.0, 1.0, 1.0);
 
@@ -141,6 +145,18 @@ MapOptimization::~MapOptimization()
   _loop_closure_signal.send(false);
   _loop_closure_thread.join();
 }
+
+void MapOptimization::cloudHandler(
+    const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg) {
+  
+  // Copy and remove NAN points
+  // pcl::fromROSMsg(*laserCloudMsg, *_laser_cloud_in);
+  // std::vector<int> indices;
+  // pcl::removeNaNFromPointCloud(*_laser_cloud_in, *_laser_cloud_in, indices);
+  // _seg_msg.header = laserCloudMsg->header;
+
+}
+
 
 void MapOptimization::allocateMemory() {
   cloudKeyPoses3D.reset(new pcl::PointCloud<PointType>());
@@ -406,6 +422,7 @@ void MapOptimization::transformUpdate() {
 		  transformTobeMapped[3] = 0.999 * transformTobeMapped[3] + 0.001 * uwbY;
       // transformTobeMapped[4] = 0.999 * transformTobeMapped[4] + 0.001 * uwbZ;
     }
+    new_uwb_data = false;
   }
   
   //TODO: Fusion with IMU

@@ -46,7 +46,7 @@ def generate_launch_description():
     package='tf2_ros',
     node_executable='static_transform_publisher',
     node_name='vel_to_camera',
-    arguments=['0', '0', '0', '0', '0', '0', 'camera', 'velodyne'],
+    arguments=['0', '0', '0', '-1.570795', '-1.570795', '0', 'camera', 'velodyne'],
   )
 
   # LeGO-LOAM
@@ -107,18 +107,25 @@ def generate_launch_description():
       parameters = [
           {'serial_port_name': '/dev/ttyUSB0'},
           {'serial_baudrate': 921600},
-          {'frame_id': 'laser_back'},
-          {'parent_frame_id': 'base_link'},
+          {'frame_id': 'laser_frame_back'},
+          {'parent_frame_id': 'camera'},
           {'pub_topicname_lidar': 'scan_back'},
-          {'angle_offset': -1.570796},
+          {'angle_offset': 1.570796},
       ],
   )
 
+#   tf_back = Node(
+#     package='tf2_ros',
+#     node_executable='static_transform_publisher',
+#     node_name='tf_back',
+#     arguments=['0', '0', '-0.810', '-1.570795', '-1.570795', '0', 'camera', 'laser_frame_back'],
+#   )
+
   tf_back = Node(
-      package='tf2_ros',
-      node_executable='static_transform_publisher',
-      output = 'screen',
-      arguments = ['-0.405','0','0.38','0','0','0','base_link','laser_back']
+    package='tf2_ros',
+    node_executable='static_transform_publisher',
+    node_name='tf_back',
+    arguments=['-0.405', '0', '0.38', '0', '0', '0', 'base_link', 'laser_frame_back'],
   )
 
   uwb = Node(
@@ -140,10 +147,10 @@ def generate_launch_description():
   ld.add_action(stdout_linebuf_envvar)
   ld.add_action(stdout_colorized_envvar)
   # Add nodes
-  ld.add_action(lego_loam_node)
+  # ld.add_action(lego_loam_node)
   ld.add_action(transform_map)
   ld.add_action(transform_camera)
-  ld.add_action(transform_vel)
+  # ld.add_action(transform_vel)
 
   ld.add_action(container)
   #ld.add_action(gl_back)

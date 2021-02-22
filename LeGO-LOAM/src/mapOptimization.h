@@ -69,6 +69,8 @@ class MapOptimization : public rclcpp::Node {
   std::thread _loop_closure_thread;
   void loopClosureThread();
 
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr _sub_laser_cloud;
+
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudSurround;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubKeyPoses;
@@ -223,6 +225,8 @@ class MapOptimization : public rclcpp::Node {
   float ctRoll, stRoll, ctPitch, stPitch, ctYaw, stYaw, tInX, tInY, tInZ;
 
  private:
+   void cloudHandler(const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg);
+
   void allocateMemory();
   void transformAssociateToMap();
   void transformUpdate();
