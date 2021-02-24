@@ -16,6 +16,10 @@ image_projection:
 
 map_optimization:
   ros__parameters:
+    laser:
+      num_vertical_scans: 16
+      num_horizontal_scans: 1800
+      
     mapping:
       enable_loop_closure: true
 
@@ -27,6 +31,10 @@ map_optimization:
       history_keyframe_fitness_score: 1.5        # default is 0.3. the smaller the better alignment
 
       global_map_visualization_search_radius: 500.0 # key frames with in n meters will be visualized
+      
+      visualization_filter_radius: 0.01
+      using_uwb_data: true
+      using_full_pointcloud: true
 
 feature_association:
   ros__parameters:

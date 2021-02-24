@@ -22,7 +22,7 @@ def generate_launch_description():
   use_sim_time = LaunchConfiguration('use_sim_time', default='true')
 
   # Nodes Configurations
-  config_file = os.path.join("/home/jetson-nx/ros2_ws/src/LeGO-LOAM-SR/LeGO-LOAM/config", 'loam_config.yaml')
+  config_file = os.path.join("/home/harry/dev_ws/src/LeGO-LOAM-SR/LeGO-LOAM/config", 'loam_config.yaml')
 #   config_file = os.path.join(get_package_share_directory('lego_loam_sr'), 'config', 'loam_config.yaml')
 
   # Tf transformations
@@ -31,7 +31,7 @@ def generate_launch_description():
     package='tf2_ros',
     node_executable='static_transform_publisher',
     node_name='camera_init_to_map',
-    arguments=['0.405', '-0.6', '0.38', '1.570795', '0', '1.570795', 'map', 'camera_init'],
+    arguments=['0.095', '1.06', '0.38', '1.570795', '0', '1.570795', 'map', 'camera_init'],
   )
 
   #velodyne
@@ -141,9 +141,9 @@ def generate_launch_description():
   ld.add_action(stdout_colorized_envvar)
   # Add nodes
   ld.add_action(lego_loam_node)
-  #ld.add_action(transform_map)
-  #ld.add_action(transform_camera)
-  #ld.add_action(transform_vel)
+  ld.add_action(transform_map)
+  ld.add_action(transform_camera)
+  ld.add_action(transform_vel)
 
   #ld.add_action(container)
   #ld.add_action(gl_back)

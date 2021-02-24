@@ -36,6 +36,7 @@
 
 #include "mapOptimization.h"
 #include <future>
+#include <Eigen/Geometry>
 
 using namespace gtsam;
 
@@ -46,6 +47,14 @@ const std::string PARAM_HISTORY_SEARCH_RADIUS = "mapping.history_keyframe_search
 const std::string PARAM_HISTORY_SEARCH_NUM = "mapping.history_keyframe_search_num";
 const std::string PARAM_HISTORY_SCORE = "mapping.history_keyframe_fitness_score";
 const std::string PARAM_GLOBAL_SEARCH_RADIUS = "mapping.global_map_visualization_search_radius";
+
+const std::string PARAM_UWB_ENABLE = "mapping.using_uwb_data";
+const std::string PARAM_FULL_POINTCLOUD_ENABLE = "mapping.using_full_pointcloud";
+
+const std::string PARAM_VISUALIZATION_FILTER_RADIUS = "mapping.visualization_filter_radius";
+
+const std::string PARAM_VERTICAL_SCANS = "laser.num_vertical_scans";
+const std::string PARAM_HORIZONTAL_SCANS = "laser.num_horizontal_scans";
 
 MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut> &input_channel)
     : Node(name), _input_channel(input_channel), _publish_global_signal(false), _loop_closure_signal(false) {
@@ -65,6 +74,7 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   this->declare_parameter("sub_topicname_uwb", rclcpp::ParameterValue("uwb_data"));
   this->get_parameter("sub_topicname_uwb", uwbpose_topic_name_);
 
+  // LiDAR pointcloud subscriber
   _sub_laser_cloud = this->create_subscription<sensor_msgs::msg::PointCloud2>(
       "/lidar_points", 1, std::bind(&MapOptimization::cloudHandler, this, std::placeholders::_1));
 
@@ -73,6 +83,11 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
       uwbpose_topic_name_, 50, std::bind(&MapOptimization::uwbpose_callback, this, std::placeholders::_1));
 
   tfBroadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+
+  this->declare_parameter(PARAM_VISUALIZATION_FILTER_RADIUS);
+  if (!this->get_parameter(PARAM_VISUALIZATION_FILTER_RADIUS, _visualization_filter_radius)) {
+    RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_ENABLE_LOOP.c_str());
+  }
 
   downSizeFilterCorner.setLeafSize(0.2, 0.2, 0.2);
   downSizeFilterSurf.setLeafSize(0.3, 0.3, 0.3);
@@ -84,9 +99,9 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   downSizeFilterSurroundingKeyPoses.setLeafSize(1.0, 1.0, 1.0);
 
   // for global map visualization
-  downSizeFilterGlobalMapKeyPoses.setLeafSize(0.05, 0.05, 0.05);
+  downSizeFilterGlobalMapKeyPoses.setLeafSize(0.05, 0.05, 0.05); //default: 0.05
   // for global map visualization
-  downSizeFilterGlobalMapKeyFrames.setLeafSize(0.01, 0.01, 0.01);
+  downSizeFilterGlobalMapKeyFrames.setLeafSize(_visualization_filter_radius, _visualization_filter_radius, _visualization_filter_radius);
 
   odomAftMapped.header.frame_id = "camera_init";
   odomAftMapped.child_frame_id = "aft_mapped";
@@ -102,6 +117,12 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   this->declare_parameter(PARAM_HISTORY_SEARCH_NUM);
   this->declare_parameter(PARAM_HISTORY_SCORE);
   this->declare_parameter(PARAM_GLOBAL_SEARCH_RADIUS);
+
+  this->declare_parameter(PARAM_VERTICAL_SCANS);
+  this->declare_parameter(PARAM_HORIZONTAL_SCANS);
+
+  this->declare_parameter(PARAM_UWB_ENABLE);
+  this->declare_parameter(PARAM_FULL_POINTCLOUD_ENABLE);
 
   // Read parameters
   if (!this->get_parameter(PARAM_ENABLE_LOOP, _loop_closure_enabled)) {
@@ -126,12 +147,35 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
     RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_GLOBAL_SEARCH_RADIUS.c_str());
   }
 
+  if (!this->get_parameter(PARAM_VERTICAL_SCANS, _vertical_scans)) {
+    RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_VERTICAL_SCANS.c_str());
+  }
+  if (!this->get_parameter(PARAM_HORIZONTAL_SCANS, _horizontal_scans)) {
+    RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_HORIZONTAL_SCANS.c_str());
+  }
+  if (!this->get_parameter(PARAM_UWB_ENABLE, _uwb_enable)) {
+    RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_UWB_ENABLE.c_str());
+  if (!this->get_parameter(PARAM_FULL_POINTCLOUD_ENABLE, _full_pointcloud_enable)) {
+    RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_FULL_POINTCLOUD_ENABLE.c_str());
+  }}
+
   allocateMemory();
 
+  R = Eigen::AngleAxisf(0.5*M_PI, Eigen::Vector3f::UnitZ())
+    * Eigen::AngleAxisf(-0.5*M_PI, Eigen::Vector3f::UnitY())
+    * Eigen::AngleAxisf(M_PI, Eigen::Vector3f::UnitX());
+
+  transform_matrix.block<3,3>(0,0) = R;
+  transform_matrix(0,3) = 0;
+  transform_matrix(1,3) = 0;
+  transform_matrix(2,3) = 0;
+  transform_matrix(3,3) = 1;
+
+  // std::cout << "transform matrix = " << std::endl << transform_matrix << std::endl;
+  // std::cout << "rotation matrix = " << std::endl << R << std::endl << "is unitary: " << R.isUnitary() << std::endl;
   _publish_global_thread = std::thread(&MapOptimization::publishGlobalMapThread, this);
   _loop_closure_thread = std::thread(&MapOptimization::loopClosureThread, this);
   _run_thread = std::thread(&MapOptimization::run, this);
-
 }
 
 MapOptimization::~MapOptimization()
@@ -146,15 +190,52 @@ MapOptimization::~MapOptimization()
   _loop_closure_thread.join();
 }
 
+void MapOptimization::resetParameters() {
+  const size_t cloud_size = _vertical_scans * _horizontal_scans;
+  PointType nanPoint;
+  nanPoint.x = std::numeric_limits<float>::quiet_NaN();
+  nanPoint.y = std::numeric_limits<float>::quiet_NaN();
+  nanPoint.z = std::numeric_limits<float>::quiet_NaN();
+
+  _laser_cloud_in->clear();
+
+  _seg_msg.start_ring_index.assign(_vertical_scans, 0);
+  _seg_msg.end_ring_index.assign(_vertical_scans, 0);
+
+  _seg_msg.segmented_cloud_ground_flag.assign(cloud_size, false);
+  _seg_msg.segmented_cloud_col_ind.assign(cloud_size, 0);
+  _seg_msg.segmented_cloud_range.assign(cloud_size, 0);
+}
+
+void MapOptimization::findStartEndAngle() {
+  // start and end orientation of this cloud
+  auto point = _laser_cloud_in->points.front();
+  _seg_msg.start_orientation = -std::atan2(point.y, point.x);
+
+  point = _laser_cloud_in->points.back();
+  _seg_msg.end_orientation = -std::atan2(point.y, point.x) + 2 * M_PI;
+
+  if (_seg_msg.end_orientation - _seg_msg.start_orientation > 3 * M_PI) {
+    _seg_msg.end_orientation -= 2 * M_PI;
+  } else if (_seg_msg.end_orientation - _seg_msg.start_orientation < M_PI) {
+    _seg_msg.end_orientation += 2 * M_PI;
+  }
+  _seg_msg.orientation_diff =
+      _seg_msg.end_orientation - _seg_msg.start_orientation;
+}
+
 void MapOptimization::cloudHandler(
     const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg) {
   
-  // Copy and remove NAN points
-  // pcl::fromROSMsg(*laserCloudMsg, *_laser_cloud_in);
-  // std::vector<int> indices;
-  // pcl::removeNaNFromPointCloud(*_laser_cloud_in, *_laser_cloud_in, indices);
-  // _seg_msg.header = laserCloudMsg->header;
+  resetParameters();
 
+  // Copy and remove NAN points
+  pcl::fromROSMsg(*laserCloudMsg, *_laser_cloud_in);
+  std::vector<int> indices;
+  pcl::removeNaNFromPointCloud(*_laser_cloud_in, *_laser_cloud_in, indices);
+  _seg_msg.header = laserCloudMsg->header;
+
+  findStartEndAngle();
 }
 
 
@@ -212,6 +293,8 @@ void MapOptimization::allocateMemory() {
   globalMapKeyFrames.reset(new pcl::PointCloud<PointType>());
   globalMapKeyFramesDS.reset(new pcl::PointCloud<PointType>());
 
+  _laser_cloud_in.reset(new pcl::PointCloud<PointType>());
+  
   timeLaserOdometry = this->now();
 
   for (int i = 0; i < 6; ++i) {
@@ -407,7 +490,13 @@ void MapOptimization::uwbpose_callback(const geometry_msgs::msg::PoseWithCovaria
   uwbX = msg->pose.pose.position.x;
   uwbY = msg->pose.pose.position.y;
   uwbZ = msg->pose.pose.position.z;
-  new_uwb_data = true;
+  if(_uwb_enable){
+    new_uwb_data = true;
+  }
+  else
+  {
+    new_uwb_data = false;
+  }
 }
 
 void MapOptimization::transformUpdate() {
@@ -627,13 +716,19 @@ void MapOptimization::publishGlobalMap() {
   // extract visualized and downsampled key frames
   for (size_t i = 0; i < globalMapKeyPosesDS->points.size(); ++i) {
     int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
-    *globalMapKeyFrames += *transformPointCloud(
+    if(_full_pointcloud_enable) {
+      *globalMapKeyFrames += *transformPointCloud(
+      fullCloudKeyFrames[thisKeyInd], &cloudKeyPoses6D->points[thisKeyInd]);
+    }
+    else{
+      *globalMapKeyFrames += *transformPointCloud(
         cornerCloudKeyFrames[thisKeyInd], &cloudKeyPoses6D->points[thisKeyInd]);
-    *globalMapKeyFrames += *transformPointCloud(
-        surfCloudKeyFrames[thisKeyInd], &cloudKeyPoses6D->points[thisKeyInd]);
-    *globalMapKeyFrames +=
-        *transformPointCloud(outlierCloudKeyFrames[thisKeyInd],
-                             &cloudKeyPoses6D->points[thisKeyInd]);
+      *globalMapKeyFrames += *transformPointCloud(
+          surfCloudKeyFrames[thisKeyInd], &cloudKeyPoses6D->points[thisKeyInd]);
+      *globalMapKeyFrames +=
+          *transformPointCloud(outlierCloudKeyFrames[thisKeyInd],
+                              &cloudKeyPoses6D->points[thisKeyInd]);
+    }
   }
   // downsample visualized points
   downSizeFilterGlobalMapKeyFrames.setInputCloud(globalMapKeyFrames);
@@ -1395,14 +1490,21 @@ void MapOptimization::saveKeyFramesAndFactor() {
       new pcl::PointCloud<PointType>());
   pcl::PointCloud<PointType>::Ptr thisOutlierKeyFrame(
       new pcl::PointCloud<PointType>());
+  pcl::PointCloud<PointType>::Ptr thisFullKeyFrame(
+  new pcl::PointCloud<PointType>());
 
   pcl::copyPointCloud(*laserCloudCornerLastDS, *thisCornerKeyFrame);
   pcl::copyPointCloud(*laserCloudSurfLastDS, *thisSurfKeyFrame);
   pcl::copyPointCloud(*laserCloudOutlierLastDS, *thisOutlierKeyFrame);
+  
+  // Transformation
+  pcl::transformPointCloud(*_laser_cloud_in, *thisFullKeyFrame,
+                             transform_matrix);
 
   cornerCloudKeyFrames.push_back(thisCornerKeyFrame);
   surfCloudKeyFrames.push_back(thisSurfKeyFrame);
   outlierCloudKeyFrames.push_back(thisOutlierKeyFrame);
+  fullCloudKeyFrames.push_back(thisFullKeyFrame);
 }
 
 void MapOptimization::correctPoses() {

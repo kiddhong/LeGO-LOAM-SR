@@ -16,6 +16,9 @@
 #include <gtsam/nonlinear/ISAM2.h>
 
 #define uwbQueLength 200
+#ifndef D2R
+	#define D2R 0.017453292519943
+#endif
 
 inline gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint) {
   // camera frame to lidar frame
@@ -92,6 +95,10 @@ class MapOptimization : public rclcpp::Node {
   double uwbY;
   double uwbZ;
   bool new_uwb_data;
+  
+  float _visualization_filter_radius;  
+  bool _uwb_enable;
+  bool _full_pointcloud_enable;
 
   std::vector<pcl::PointCloud<PointType>::Ptr> cornerCloudKeyFrames;
   std::vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames;
@@ -182,8 +189,18 @@ class MapOptimization : public rclcpp::Node {
       downSizeFilterGlobalMapKeyPoses;  // for global map visualization
   pcl::VoxelGrid<PointType>
       downSizeFilterGlobalMapKeyFrames;  // for global map visualization
+  
+
+  pcl::PointCloud<PointType>::Ptr _laser_cloud_in;
+  std::vector<pcl::PointCloud<PointType>::Ptr> fullCloudKeyFrames;
+  int _vertical_scans;
+  int _horizontal_scans;
+  cloud_msgs::msg::CloudInfo _seg_msg;
 
   rclcpp::Time timeLaserOdometry;
+
+  Eigen::Matrix4f transform_matrix = Eigen::Matrix4f::Zero();
+  Eigen::Matrix3f R;
 
   float transformLast[6];
   float transformSum[6];
@@ -225,7 +242,9 @@ class MapOptimization : public rclcpp::Node {
   float ctRoll, stRoll, ctPitch, stPitch, ctYaw, stYaw, tInX, tInY, tInZ;
 
  private:
-   void cloudHandler(const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg);
+  void resetParameters();
+  void findStartEndAngle();
+  void cloudHandler(const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg);
 
   void allocateMemory();
   void transformAssociateToMap();
