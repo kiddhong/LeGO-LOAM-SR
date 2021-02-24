@@ -86,7 +86,7 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
 
   this->declare_parameter(PARAM_VISUALIZATION_FILTER_RADIUS);
   if (!this->get_parameter(PARAM_VISUALIZATION_FILTER_RADIUS, _visualization_filter_radius)) {
-    RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_ENABLE_LOOP.c_str());
+    RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_VISUALIZATION_FILTER_RADIUS.c_str());
   }
 
   downSizeFilterCorner.setLeafSize(0.2, 0.2, 0.2);
@@ -155,9 +155,10 @@ MapOptimization::MapOptimization(const std::string &name, Channel<AssociationOut
   }
   if (!this->get_parameter(PARAM_UWB_ENABLE, _uwb_enable)) {
     RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_UWB_ENABLE.c_str());
+  }
   if (!this->get_parameter(PARAM_FULL_POINTCLOUD_ENABLE, _full_pointcloud_enable)) {
     RCLCPP_WARN(this->get_logger(), "Parameter %s not found", PARAM_FULL_POINTCLOUD_ENABLE.c_str());
-  }}
+  }
 
   allocateMemory();
 
